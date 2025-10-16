@@ -37,7 +37,7 @@ async function scrapeWithPlaywright(url) {
         console.log(`[Playwright] Extraction des informations...`);
         
         const [productNameRaw, priceRaw, imageUrl, description] = await Promise.all([
-            page.textContent('h1.product-title, h1[itemprop="name"], div.title.fw-bold', { timeout: 15000 }).catch(() => null),
+            page.textContent('h1[itemprop="name"], h1.product-title, h1').catch(() => null),
             page.textContent('.price-tag, .price, .product-price', { timeout: 15000 }).catch(() => null),
             page.locator('meta[property="og:image"]').getAttribute('content').catch(() => null),
             page.locator('meta[name="description"]').getAttribute('content').catch(() => null)
