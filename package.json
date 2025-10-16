@@ -1,0 +1,16 @@
+
+{
+  "name": "mon-api-scraper",
+  "version": "1.0.0",
+  "description": "Service de scraping dédié pour IvoirePrice",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "postinstall": "npx playwright install chromium"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "playwright-chromium": "^1.45.1"
+  }
+}
