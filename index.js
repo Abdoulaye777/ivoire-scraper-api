@@ -1,6 +1,6 @@
 
 const express = require('express');
-const { chromium } = require('playwright-chromium');
+const { chromium } = require('playwright');
 const cors = require('cors');
 
 const app = express();
@@ -25,7 +25,10 @@ async function scrapeWithPlaywright(url) {
     console.log('[Playwright] Lancement du navigateur...');
     let browser = null;
     try {
-        browser = await chromium.launch({ headless: true });
+        browser = await chromium.launch({
+            headless: true,
+            args: ['--no-sandbox', '--disable-setuid-sandbox']
+        });
         const context = await browser.newContext({
             userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
         });
@@ -36,12 +39,13 @@ async function scrapeWithPlaywright(url) {
 
         console.log(`[Playwright] Extraction des informations...`);
         
-        const [productNameRaw, priceRaw, imageUrl, description] = await Promise.all([
-            page.textContent('h1[itemprop="name"], h1.product-title, h1').catch(() => null),
-            page.textContent('.price-tag, .price, .product-price', { timeout: 15000 }).catch(() => null),
-            page.locator('meta[property="og:image"]').getAttribute('content').catch(() => null),
-            page.locator('meta[name="description"]').getAttribute('content').catch(() => null)
-        ]);
+        // Attendre le sélecteur du titre pour s'assurer que la page est chargée
+        await page.waitForSelector('h1', { timeout: 15000 });
+
+        const productNameRaw = await page.locator('h1').first().textContent().catch(() => null);
+        const priceRaw = await page.locator('.price, .price-tag, .product-price, [class*="price"]').first().textContent({ timeout: 15000 }).catch(() => null);
+        const imageUrl = await page.locator('meta[property="og:image"]').getAttribute('content').catch(() => null);
+        const description = await page.locator('meta[name="description"]').getAttribute('content').catch(() => null);
 
         if (!productNameRaw || !productNameRaw.trim()) {
             throw new Error(`Le nom du produit n'a pas pu être extrait. Les sélecteurs CSS sont peut-être obsolètes.`);
