@@ -40,8 +40,9 @@ function cleanText(text) {
 
 /**
  * Scrape les informations d'un produit depuis une URL donnée en utilisant Playwright.
+ * Cette fonction attrape ses propres erreurs et retourne toujours un objet JS.
  * @param {string} url L'URL de la page produit à scraper.
- * @returns {Promise<object>} Un objet contenant les données du produit scrapé.
+ * @returns {Promise<object>} Un objet contenant les données du produit ou un objet d'erreur.
  */
 async function scrapeWithPlaywright(url) {
     console.log('[Playwright] Lancement du navigateur...');
@@ -67,18 +68,17 @@ async function scrapeWithPlaywright(url) {
         const priceRaw = await page.locator('.product-info .price').first().textContent({ timeout: 10000 }).catch(() => null);
         const imageUrl = await page.locator('meta[property="og:image"]').getAttribute('content').catch(() => null);
         const descriptionRaw = await page.locator('meta[name="description"]').getAttribute('content').catch(() => null);
-
+        
         if (!productNameRaw || !productNameRaw.trim()) {
-            throw new Error("Le nom du produit n'a pas pu être extrait. Le sélecteur '.product-info .title' est peut-être obsolète.");
+             // Retourne un objet d'erreur, ne lance pas d'exception
+            return { error: "Le nom du produit n'a pas pu être extrait. Le sélecteur '.product-info .title' est peut-être obsolète." };
         }
         
         const productName = cleanText(productNameRaw);
         const price = cleanPriceNoDecimals(priceRaw);
         const descriptionComplete = cleanText(descriptionRaw);
         
-        console.log(`[Playwright] ✅ Données extraites et nettoyées: Nom='${productName}', Prix='${price}'`);
-
-        return {
+        const scrapedData = {
             productName,
             price,
             descriptionComplete: descriptionComplete || 'Aucune description trouvée.',
@@ -86,10 +86,13 @@ async function scrapeWithPlaywright(url) {
             productUrl: url,
         };
 
+        console.log(`[Playwright] ✅ Données extraites :`, scrapedData);
+        return scrapedData;
+
     } catch (error) {
-        console.error(`[Playwright] ERREUR lors du scraping de l'URL ${url}:`, error.message);
-        // Remonte l'erreur pour qu'elle soit gérée par le handler de la route Express
-        throw new Error(`Le scraping a échoué. Cause: ${error.message}`);
+        console.error(`[Playwright] ERREUR critique lors du scraping de l'URL ${url}:`, error.message);
+        // En cas d'erreur grave (navigation, etc.), retourne un objet d'erreur structuré.
+        return { error: `Le scraping a échoué. Cause: ${error.message}` };
     } finally {
         if (browser) {
             await browser.close();
@@ -101,23 +104,37 @@ async function scrapeWithPlaywright(url) {
 app.post('/scrape', async (req, res) => {
     const { url } = req.body;
 
+    // Définir l'en-tête une seule fois au début
+    res.setHeader('Content-Type', 'application/json');
+
     if (!url) {
-        // Définit le Content-Type et renvoie une erreur JSON propre
         return res.status(400).json({ success: false, message: 'URL est requise.' });
     }
 
     try {
         console.log(`[API] Début du scraping pour l'URL: ${url}`);
-        const scrapedData = await scrapeWithPlaywright(url);
+        const scrapedResult = await scrapeWithPlaywright(url);
         
-        // Définit le Content-Type et renvoie les données avec succès
-        return res.status(200).json({ success: true, data: scrapedData });
+        // Si la fonction de scraping a retourné une erreur, on la traite comme un échec.
+        if (scrapedResult.error) {
+            console.error(`[API] Erreur rapportée par le scraper: ${scrapedResult.error}`);
+            return res.status(500).json({ success: false, message: scrapedResult.error });
+        }
+        
+        // Valider que la conversion en JSON est possible avant d'envoyer.
+        // Bien que cela soit peu probable avec des objets simples, c'est une sécurité.
+        try {
+            JSON.stringify(scrapedResult);
+        } catch (e) {
+            throw new Error('Erreur lors de la conversion des données en JSON.');
+        }
+
+        console.log('[API] ✅ Scraping réussi, envoi de la réponse JSON.');
+        return res.status(200).json({ success: true, data: scrapedResult });
 
     } catch (error) {
-        console.error(`[API] Erreur finale interceptée pour l'URL ${url}:`, error.message);
-        
-        // Définit le Content-Type et renvoie une erreur JSON structurée
-        // C'est le bloc "catch-all" qui garantit une réponse JSON.
+        // Ce bloc attrape les erreurs inattendues (ex: erreur de conversion JSON).
+        console.error(`[API] Erreur finale du serveur pour l'URL ${url}:`, error.message);
         return res.status(500).json({ 
             success: false, 
             message: error.message || 'Une erreur inconnue est survenue durant le scraping.' 
