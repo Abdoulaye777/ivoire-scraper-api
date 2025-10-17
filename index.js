@@ -9,11 +9,18 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
+/**
+ * Nettoie une chaîne de caractères représentant un prix pour en extraire un nombre entier.
+ * Supprime les symboles monétaires (FCFA), les espaces, et les caractères non numériques.
+ * @param {string | null} priceStr La chaîne de prix brute.
+ * @returns {number | null} Le prix sous forme de nombre entier, ou null si invalide.
+ */
 function cleanPriceNoDecimals(priceStr) {
   if (!priceStr || priceStr.trim() === '') {
     return null;
   }
-  const cleaned = priceStr.replace(/[^\d]/g, '');
+  // Remplace "FCFA" et tout ce qui n'est pas un chiffre par une chaîne vide
+  const cleaned = priceStr.replace(/FCFA/gi, '').replace(/[^\d]/g, '');
   if (cleaned === '') {
     return null;
   }
@@ -21,6 +28,11 @@ function cleanPriceNoDecimals(priceStr) {
   return isNaN(priceNumber) ? null : priceNumber;
 }
 
+/**
+ * Scrape les informations d'un produit depuis une URL donnée en utilisant Playwright.
+ * @param {string} url L'URL de la page produit à scraper.
+ * @returns {Promise<object>} Un objet contenant les données du produit scrapé.
+ */
 async function scrapeWithPlaywright(url) {
     console.log('[Playwright] Lancement du navigateur...');
     let browser = null;
@@ -37,20 +49,24 @@ async function scrapeWithPlaywright(url) {
         console.log(`[Playwright] Navigation vers: ${url}`);
         await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 });
 
-        console.log(`[Playwright] Extraction des informations...`);
-        
-        // Attendre le sélecteur de titre spécifique à babiken.net
+        console.log('[Playwright] Attente du sélecteur de titre principal...');
+        // Étape clé : attendre que le contenu dynamique soit chargé en ciblant un élément stable.
         await page.waitForSelector('.product-info .title', { timeout: 15000 });
-
+        console.log('[Playwright] Sélecteur trouvé. Extraction des informations...');
+        
+        // --- Extraction des données ---
         const productNameRaw = await page.locator('.product-info .title').first().textContent().catch(() => null);
         const priceRaw = await page.locator('.product-info .price').first().textContent({ timeout: 10000 }).catch(() => null);
+        
+        // Les métadonnées sont souvent plus rapides et fiables à obtenir
         const imageUrl = await page.locator('meta[property="og:image"]').getAttribute('content').catch(() => null);
         const description = await page.locator('meta[name="description"]').getAttribute('content').catch(() => null);
 
         if (!productNameRaw || !productNameRaw.trim()) {
-            throw new Error(`Le nom du produit n'a pas pu être extrait. Les sélecteurs CSS sont peut-être obsolètes.`);
+            throw new Error(`Le nom du produit n'a pas pu être extrait. Le sélecteur '.product-info .title' est peut-être obsolète.`);
         }
         
+        // --- Nettoyage des données ---
         const productName = productNameRaw.trim();
         const price = cleanPriceNoDecimals(priceRaw);
         
@@ -66,6 +82,7 @@ async function scrapeWithPlaywright(url) {
 
     } catch (error) {
         console.error(`[Playwright] ERREUR lors du scraping de l'URL ${url}:`, error.message);
+        // Propager une erreur plus explicite
         throw new Error(`Le scraping a échoué. Cause: ${error.message}`);
     } finally {
         if (browser) {
