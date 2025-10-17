@@ -47,11 +47,12 @@ async function scrapeWithPlaywright(url) {
         const page = await context.newPage();
 
         console.log(`[Playwright] Navigation vers: ${url}`);
-        await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 });
+        // Augmentation du timeout de navigation à 90 secondes pour les sites lents
+        await page.goto(url, { waitUntil: 'networkidle', timeout: 90000 });
 
         console.log('[Playwright] Attente du sélecteur de titre principal...');
         // Étape clé : attendre que le contenu dynamique soit chargé en ciblant un élément stable.
-        await page.waitForSelector('.product-info .title', { timeout: 15000 });
+        await page.waitForSelector('.product-info .title', { timeout: 20000 });
         console.log('[Playwright] Sélecteur trouvé. Extraction des informations...');
         
         // --- Extraction des données ---
@@ -82,7 +83,7 @@ async function scrapeWithPlaywright(url) {
 
     } catch (error) {
         console.error(`[Playwright] ERREUR lors du scraping de l'URL ${url}:`, error.message);
-        // Propager une erreur plus explicite
+        // Propager une erreur plus explicite pour qu'elle soit renvoyée en JSON
         throw new Error(`Le scraping a échoué. Cause: ${error.message}`);
     } finally {
         if (browser) {
@@ -100,9 +101,11 @@ app.post('/scrape', async (req, res) => {
     }
 
     try {
+        console.log(`[API] Début du scraping pour l'URL: ${url}`);
         const scrapedData = await scrapeWithPlaywright(url);
         res.status(200).json({ success: true, data: scrapedData });
     } catch (error) {
+        console.error(`[API] Erreur finale interceptée pour l'URL ${url}:`, error.message);
         res.status(500).json({ success: false, message: error.message || 'Une erreur inconnue est survenue durant le scraping.' });
     }
 });
