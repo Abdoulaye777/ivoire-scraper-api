@@ -39,11 +39,11 @@ async function scrapeWithPlaywright(url) {
 
         console.log(`[Playwright] Extraction des informations...`);
         
-        // Attendre un sélecteur de titre fiable pour s'assurer que la page est chargée
-        await page.waitForSelector('h1, .pdp-title, [class*="product-title"]', { timeout: 15000 });
+        // Attendre le sélecteur de titre spécifique à babiken.net
+        await page.waitForSelector('.product-info .title', { timeout: 15000 });
 
-        const productNameRaw = await page.locator('h1, .pdp-title, [class*="product-title"]').first().textContent().catch(() => null);
-        const priceRaw = await page.locator('.-prce, .price, .price-tag, .product-price, [class*="price"]').first().textContent({ timeout: 10000 }).catch(() => null);
+        const productNameRaw = await page.locator('.product-info .title').first().textContent().catch(() => null);
+        const priceRaw = await page.locator('.product-info .price').first().textContent({ timeout: 10000 }).catch(() => null);
         const imageUrl = await page.locator('meta[property="og:image"]').getAttribute('content').catch(() => null);
         const description = await page.locator('meta[name="description"]').getAttribute('content').catch(() => null);
 
