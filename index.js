@@ -61,6 +61,7 @@ async function scrapeWithPlaywright(url) {
         await page.goto(url, { waitUntil: 'networkidle', timeout: 90000 });
 
         console.log('[Playwright] Attente du sélecteur de titre principal...');
+        // Le sélecteur .product-info .title est plus stable sur les différentes pages
         await page.waitForSelector('.product-info .title', { timeout: 20000 });
         console.log('[Playwright] Sélecteur trouvé. Extraction des informations...');
         
@@ -103,8 +104,6 @@ async function scrapeWithPlaywright(url) {
 
 app.post('/scrape', async (req, res) => {
     const { url } = req.body;
-
-    // Définir l'en-tête une seule fois au début
     res.setHeader('Content-Type', 'application/json');
 
     if (!url) {
@@ -115,29 +114,19 @@ app.post('/scrape', async (req, res) => {
         console.log(`[API] Début du scraping pour l'URL: ${url}`);
         const scrapedResult = await scrapeWithPlaywright(url);
         
-        // Si la fonction de scraping a retourné une erreur, on la traite comme un échec.
         if (scrapedResult.error) {
             console.error(`[API] Erreur rapportée par le scraper: ${scrapedResult.error}`);
             return res.status(500).json({ success: false, message: scrapedResult.error });
         }
         
-        // Valider que la conversion en JSON est possible avant d'envoyer.
-        // Bien que cela soit peu probable avec des objets simples, c'est une sécurité.
-        try {
-            JSON.stringify(scrapedResult);
-        } catch (e) {
-            throw new Error('Erreur lors de la conversion des données en JSON.');
-        }
-
         console.log('[API] ✅ Scraping réussi, envoi de la réponse JSON.');
         return res.status(200).json({ success: true, data: scrapedResult });
 
     } catch (error) {
-        // Ce bloc attrape les erreurs inattendues (ex: erreur de conversion JSON).
-        console.error(`[API] Erreur finale du serveur pour l'URL ${url}:`, error.message);
+        console.error(`[API] Erreur finale du serveur pour l'URL ${url}:`, error);
         return res.status(500).json({ 
             success: false, 
-            message: error.message || 'Une erreur inconnue est survenue durant le scraping.' 
+            message: error instanceof Error ? error.message : 'Une erreur inconnue est survenue durant le scraping.' 
         });
     }
 });
