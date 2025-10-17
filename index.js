@@ -11,7 +11,6 @@ app.use(express.json());
 
 /**
  * Nettoie une chaîne de caractères représentant un prix pour en extraire un nombre entier.
- * Supprime les symboles monétaires (FCFA), les espaces, et les caractères non numériques.
  * @param {string | null} priceStr La chaîne de prix brute.
  * @returns {number | null} Le prix sous forme de nombre entier, ou null si invalide.
  */
@@ -19,7 +18,6 @@ function cleanPriceNoDecimals(priceStr) {
   if (!priceStr || priceStr.trim() === '') {
     return null;
   }
-  // Remplace "FCFA" et tout ce qui n'est pas un chiffre par une chaîne vide
   const cleaned = priceStr.replace(/FCFA/gi, '').replace(/[^\d]/g, '');
   if (cleaned === '') {
     return null;
@@ -27,6 +25,18 @@ function cleanPriceNoDecimals(priceStr) {
   const priceNumber = parseInt(cleaned, 10);
   return isNaN(priceNumber) ? null : priceNumber;
 }
+
+/**
+ * Nettoie une chaîne de texte en supprimant les retours à la ligne, les tabulations
+ * et les espaces multiples pour garantir un JSON propre.
+ * @param {string | null} text Le texte à nettoyer.
+ * @returns {string} Le texte nettoyé.
+ */
+function cleanText(text) {
+    if (!text) return '';
+    return text.replace(/(\r\n|\n|\r|\t)/gm, " ").replace(/\s+/g, ' ').trim();
+}
+
 
 /**
  * Scrape les informations d'un produit depuis une URL donnée en utilisant Playwright.
@@ -47,43 +57,38 @@ async function scrapeWithPlaywright(url) {
         const page = await context.newPage();
 
         console.log(`[Playwright] Navigation vers: ${url}`);
-        // Augmentation du timeout de navigation à 90 secondes pour les sites lents
         await page.goto(url, { waitUntil: 'networkidle', timeout: 90000 });
 
         console.log('[Playwright] Attente du sélecteur de titre principal...');
-        // Étape clé : attendre que le contenu dynamique soit chargé en ciblant un élément stable.
         await page.waitForSelector('.product-info .title', { timeout: 20000 });
         console.log('[Playwright] Sélecteur trouvé. Extraction des informations...');
         
-        // --- Extraction des données ---
         const productNameRaw = await page.locator('.product-info .title').first().textContent().catch(() => null);
         const priceRaw = await page.locator('.product-info .price').first().textContent({ timeout: 10000 }).catch(() => null);
-        
-        // Les métadonnées sont souvent plus rapides et fiables à obtenir
         const imageUrl = await page.locator('meta[property="og:image"]').getAttribute('content').catch(() => null);
-        const description = await page.locator('meta[name="description"]').getAttribute('content').catch(() => null);
+        const descriptionRaw = await page.locator('meta[name="description"]').getAttribute('content').catch(() => null);
 
         if (!productNameRaw || !productNameRaw.trim()) {
-            throw new Error(`Le nom du produit n'a pas pu être extrait. Le sélecteur '.product-info .title' est peut-être obsolète.`);
+            throw new Error("Le nom du produit n'a pas pu être extrait. Le sélecteur '.product-info .title' est peut-être obsolète.");
         }
         
-        // --- Nettoyage des données ---
-        const productName = productNameRaw.trim();
+        const productName = cleanText(productNameRaw);
         const price = cleanPriceNoDecimals(priceRaw);
+        const descriptionComplete = cleanText(descriptionRaw);
         
-        console.log(`[Playwright] ✅ Données extraites: Nom='${productName}', Prix='${price}'`);
+        console.log(`[Playwright] ✅ Données extraites et nettoyées: Nom='${productName}', Prix='${price}'`);
 
         return {
             productName,
             price,
-            descriptionComplete: description || 'Aucune description trouvée.',
+            descriptionComplete: descriptionComplete || 'Aucune description trouvée.',
             imageUrl: imageUrl || undefined,
             productUrl: url,
         };
 
     } catch (error) {
         console.error(`[Playwright] ERREUR lors du scraping de l'URL ${url}:`, error.message);
-        // Propager une erreur plus explicite pour qu'elle soit renvoyée en JSON
+        // Remonte l'erreur pour qu'elle soit gérée par le handler de la route Express
         throw new Error(`Le scraping a échoué. Cause: ${error.message}`);
     } finally {
         if (browser) {
@@ -103,10 +108,18 @@ app.post('/scrape', async (req, res) => {
     try {
         console.log(`[API] Début du scraping pour l'URL: ${url}`);
         const scrapedData = await scrapeWithPlaywright(url);
+        
+        // La méthode .json() d'Express définit automatiquement le Content-Type à application/json
         res.status(200).json({ success: true, data: scrapedData });
+
     } catch (error) {
         console.error(`[API] Erreur finale interceptée pour l'URL ${url}:`, error.message);
-        res.status(500).json({ success: false, message: error.message || 'Une erreur inconnue est survenue durant le scraping.' });
+        
+        // Répond avec un JSON d'erreur structuré
+        res.status(500).json({ 
+            success: false, 
+            message: error.message || 'Une erreur inconnue est survenue durant le scraping.' 
+        });
     }
 });
 
