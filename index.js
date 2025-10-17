@@ -102,6 +102,7 @@ app.post('/scrape', async (req, res) => {
     const { url } = req.body;
 
     if (!url) {
+        // Définit le Content-Type et renvoie une erreur JSON propre
         return res.status(400).json({ success: false, message: 'URL est requise.' });
     }
 
@@ -109,14 +110,15 @@ app.post('/scrape', async (req, res) => {
         console.log(`[API] Début du scraping pour l'URL: ${url}`);
         const scrapedData = await scrapeWithPlaywright(url);
         
-        // La méthode .json() d'Express définit automatiquement le Content-Type à application/json
-        res.status(200).json({ success: true, data: scrapedData });
+        // Définit le Content-Type et renvoie les données avec succès
+        return res.status(200).json({ success: true, data: scrapedData });
 
     } catch (error) {
         console.error(`[API] Erreur finale interceptée pour l'URL ${url}:`, error.message);
         
-        // Répond avec un JSON d'erreur structuré
-        res.status(500).json({ 
+        // Définit le Content-Type et renvoie une erreur JSON structurée
+        // C'est le bloc "catch-all" qui garantit une réponse JSON.
+        return res.status(500).json({ 
             success: false, 
             message: error.message || 'Une erreur inconnue est survenue durant le scraping.' 
         });
