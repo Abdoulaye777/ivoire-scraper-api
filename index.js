@@ -61,7 +61,6 @@ async function scrapeWithPlaywright(url) {
         await page.goto(url, { waitUntil: 'networkidle', timeout: 90000 });
 
         console.log('[Playwright] Attente du sélecteur de titre principal...');
-        // Le sélecteur .product-info .title est plus stable sur les différentes pages
         await page.waitForSelector('.product-info .title', { timeout: 20000 });
         console.log('[Playwright] Sélecteur trouvé. Extraction des informations...');
         
@@ -71,7 +70,6 @@ async function scrapeWithPlaywright(url) {
         const descriptionRaw = await page.locator('meta[name="description"]').getAttribute('content').catch(() => null);
         
         if (!productNameRaw || !productNameRaw.trim()) {
-             // Retourne un objet d'erreur, ne lance pas d'exception
             return { error: "Le nom du produit n'a pas pu être extrait. Le sélecteur '.product-info .title' est peut-être obsolète." };
         }
         
@@ -92,7 +90,6 @@ async function scrapeWithPlaywright(url) {
 
     } catch (error) {
         console.error(`[Playwright] ERREUR critique lors du scraping de l'URL ${url}:`, error.message);
-        // En cas d'erreur grave (navigation, etc.), retourne un objet d'erreur structuré.
         return { error: `Le scraping a échoué. Cause: ${error.message}` };
     } finally {
         if (browser) {
@@ -119,11 +116,15 @@ app.post('/scrape', async (req, res) => {
             return res.status(500).json({ success: false, message: scrapedResult.error });
         }
         
+        // Validation finale de la sérialisation
+        JSON.stringify(scrapedResult);
+
         console.log('[API] ✅ Scraping réussi, envoi de la réponse JSON.');
         return res.status(200).json({ success: true, data: scrapedResult });
 
     } catch (error) {
         console.error(`[API] Erreur finale du serveur pour l'URL ${url}:`, error);
+        // Toujours renvoyer une réponse JSON valide
         return res.status(500).json({ 
             success: false, 
             message: error instanceof Error ? error.message : 'Une erreur inconnue est survenue durant le scraping.' 
