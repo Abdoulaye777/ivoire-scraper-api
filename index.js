@@ -10,40 +10,11 @@ app.use(cors());
 app.use(express.json());
 
 /**
- * Nettoie une chaîne de caractères représentant un prix pour en extraire un nombre.
- * @param {string | null} priceStr La chaîne de prix brute.
- * @returns {number | null} Le prix sous forme de nombre, ou null si invalide.
+ * Scrape le contenu HTML d'une URL donnée en utilisant Playwright.
+ * @param {string} url L'URL de la page à scraper.
+ * @returns {Promise<object>} Un objet contenant le HTML de la page ou un objet d'erreur.
  */
-function cleanPrice(priceStr) {
-  if (!priceStr || typeof priceStr !== 'string') {
-    return null;
-  }
-  const cleaned = priceStr.replace(/[^\d]/g, '');
-  if (cleaned === '') {
-    return null;
-  }
-  const priceNumber = parseInt(cleaned, 10);
-  return isNaN(priceNumber) ? null : priceNumber;
-}
-
-/**
- * Nettoie une chaîne de texte en supprimant les retours à la ligne, les tabulations
- * et les espaces multiples pour garantir un JSON propre.
- * @param {string | null} text Le texte à nettoyer.
- * @returns {string} Le texte nettoyé.
- */
-function cleanText(text) {
-    if (!text || typeof text !== 'string') return '';
-    return text.replace(/(\r\n|\n|\r|\t)/gm, " ").replace(/\s+/g, ' ').trim();
-}
-
-/**
- * Scrape les informations d'un produit depuis une URL donnée en utilisant Playwright.
- * Cette fonction attrape ses propres erreurs et retourne toujours un objet JS.
- * @param {string} url L'URL de la page produit à scraper.
- * @returns {Promise<object>} Un objet contenant les données du produit ou un objet d'erreur.
- */
-async function scrapeProduct(url) {
+async function fetchPageContent(url) {
     let browser = null;
     console.log('[Scraper] Lancement du navigateur pour l\'URL :', url);
     try {
@@ -58,30 +29,16 @@ async function scrapeProduct(url) {
 
         console.log(`[Scraper] Navigation vers: ${url}`);
         await page.goto(url, { waitUntil: 'networkidle', timeout: 45000 });
-
-        console.log('[Scraper] Attente des sélecteurs...');
-        // Use a reliable selector that indicates the main content is loaded.
-        await page.waitForSelector('.product-info .title', { timeout: 25000 });
-
-        const productName = await page.locator('.product-info .title').first().textContent().catch(() => null);
-        const price = await page.locator('.product-info .price').first().textContent().catch(() => null);
-        const imageUrl = await page.locator('meta[property="og:image"]').getAttribute('content').catch(() => null);
-        const description = await page.locator('meta[name="description"]').getAttribute('content').catch(() => null);
         
-        console.log('[Scraper] ✅ Données brutes extraites.');
+        const content = await page.content();
         
-        return {
-            productName: cleanText(productName),
-            price: cleanPrice(price),
-            descriptionComplete: cleanText(description) || 'Aucune description trouvée.',
-            imageUrl: imageUrl || undefined,
-            productUrl: url,
-        };
+        console.log('[Scraper] ✅ Contenu HTML brut extrait.');
+        
+        return { content };
 
     } catch (error) {
-        console.error(`[Scraper] ERREUR lors du scraping de ${url}:`, error.message);
-        // Retourne toujours un objet d'erreur JSON compatible
-        return { error: `Le scraping a échoué: ${error.message}` };
+        console.error(`[Scraper] ERREUR lors de la récupération du contenu de ${url}:`, error.message);
+        return { error: `La récupération du contenu de la page a échoué: ${error.message}` };
     } finally {
         if (browser) {
             await browser.close();
@@ -99,24 +56,24 @@ app.post('/scrape', async (req, res) => {
     }
 
     try {
-        console.log(`[API] Début du scraping pour l'URL: ${url}`);
-        const scrapedResult = await scrapeProduct(url);
+        console.log(`[API] Début de la récupération de contenu pour l'URL: ${url}`);
+        const result = await fetchPageContent(url);
         
-        // Si le scraper lui-même a attrapé une erreur, il la renvoie dans l'objet.
-        if (scrapedResult.error) {
-            console.error(`[API] Erreur rapportée par le scraper: ${scrapedResult.error}`);
-            return res.status(500).json({ success: false, message: scrapedResult.error });
+        if (result.error) {
+            console.error(`[API] Erreur rapportée par le scraper: ${result.error}`);
+            return res.status(500).json({ success: false, message: result.error });
         }
         
-        // Validation finale que la réponse est un objet sérialisable
-        JSON.stringify(scrapedResult);
+        // Validation que le contenu existe
+        if (!result.content) {
+             return res.status(500).json({ success: false, message: "Le contenu de la page est vide." });
+        }
 
-        console.log('[API] ✅ Scraping réussi, envoi de la réponse JSON.');
-        return res.status(200).json({ success: true, data: scrapedResult });
+        console.log('[API] ✅ Récupération de contenu réussie, envoi de la réponse JSON.');
+        return res.status(200).json({ success: true, content: result.content });
 
     } catch (error) {
         console.error(`[API] Erreur critique du serveur pour l'URL ${url}:`, error);
-        // Ultime recours : envoyer une erreur JSON standard
         return res.status(500).json({ 
             success: false, 
             message: error instanceof Error ? `Erreur du serveur : ${error.message}` : 'Une erreur serveur inconnue est survenue.'
