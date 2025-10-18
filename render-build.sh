@@ -5,6 +5,7 @@ set -o errexit
 # Installe les dépendances npm
 npm install
 
-# Installe Playwright et ses dépendances de navigateur.
-# L'argument --with-deps installe les dépendances système nécessaires.
-npx playwright install --with-deps chromium
+# Installe le navigateur Chromium pour Playwright.
+# Nous n'utilisons pas --with-deps car l'environnement de build de Render
+# fournit déjà les dépendances système nécessaires.
+npx playwright install chromium
