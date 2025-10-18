@@ -2,8 +2,9 @@
 # exit on error
 set -o errexit
 
-# Installe les dépendances système nécessaires pour Playwright
-apt-get update && apt-get install -y libnss3 libatk-bridge2.0-0 libdrm2 libgbm1
-
-# Lance l'installation de npm, qui déclenchera le script postinstall
+# Installe les dépendances npm
 npm install
+
+# Installe Playwright et ses dépendances de navigateur.
+# L'argument --with-deps installe les dépendances système nécessaires.
+npx playwright install --with-deps chromium
