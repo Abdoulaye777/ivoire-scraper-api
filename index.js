@@ -5,7 +5,7 @@ const cors = require('cors');
 
 const app = express();
 // Render fournit le port via la variable d'environnement PORT
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 10000;
 
 app.use(cors());
 app.use(express.json());
