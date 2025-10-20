@@ -2,7 +2,7 @@
 const express = require('express');
 const { chromium } = require('playwright');
 const cors = require('cors');
-const cheerio = require('cheerio');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -10,46 +10,65 @@ const PORT = process.env.PORT || 10000;
 app.use(cors());
 app.use(express.json());
 
-// Sélecteurs pour Jumia.ci - C'est ici que vous devrez adapter si le site change
-const JUMIA_SELECTORS = {
-    name: 'h1.-pbxs',
-    price: '.-b.-ltr.-tal.-fs24',
-    description: 'div.markup.-mhm > p',
-    image: 'img.-fw.-fh',
-    currency: 'span[data-currency-iso]',
-};
+// Instructions pour l'IA
+const promptTemplate = `
+You are an expert web scraper and data extractor. Your task is to analyze the provided HTML content of a product page and extract the specified product information.
 
-function extractJumiaProductData(html, url) {
-    const $ = cheerio.load(html);
+Carefully parse the following HTML content:
+--- HTML START ---
+{{{htmlContent}}}
+--- HTML END ---
 
-    const productName = $(JUMIA_SELECTORS.name).first().text().trim();
-    
-    // Le prix est souvent dans un format comme "150,000 FCFA". Nous extrayons seulement les chiffres.
-    const priceString = $(JUMIA_SELECTORS.price).first().text().trim();
-    const price = priceString.replace(/[^\d]/g, '');
+From the HTML, extract the following details and return them as a valid JSON object:
+- productName: The main title or name of the product.
+- price: The price of the product. Return it as a string of numbers only, without any currency symbols (like 'FCFA', '€', '$'), thousand separators (like ',', '.'), or any other non-numeric characters. For example, if the price is "150.000 FCFA", you should return "150000".
+- currency: The currency of the price (e.g., "XOF", "EUR", "USD"). If you can't determine it, default to "XOF".
+- descriptionComplete: A detailed product description.
+- imageUrl: The absolute URL for the main product image. If the URL is relative (e.g., /path/to/image.jpg), you must not include it. Only absolute URLs are valid.
+- productUrl: The original URL of the page. Use this exact value: {{{productUrl}}}
 
-    const descriptionComplete = $(JUMIA_SELECTORS.description).text().trim();
-    
-    let imageUrl = $(JUMIA_SELECTORS.image).first().attr('data-src');
-    if (imageUrl && !imageUrl.startsWith('http')) {
-        imageUrl = new URL(imageUrl, url).href;
+If you cannot find a specific piece of information, omit the corresponding field from the JSON output. If the content does not appear to be a product page, return a JSON object with an 'error' field explaining why.
+The final output must be a single, valid JSON object and nothing else.
+`;
+
+
+async function extractProductDataWithAI(html, url) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+        throw new Error("La variable d'environnement GEMINI_API_KEY n'est pas définie sur le serveur de scraping.");
     }
+    
+    const genAI = new GoogleGenerativeAI(apiKey);
+    // Nous utilisons un modèle réputé stable et largement disponible.
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
 
-    const currency = "XOF";
+    const fullPrompt = promptTemplate.replace('{{{htmlContent}}}', html).replace('{{{productUrl}}}', url);
+    
+    try {
+        const result = await model.generateContent(fullPrompt);
+        const response = await result.response;
+        let text = response.text();
+        
+        // Nettoyage pour s'assurer que la réponse est bien un JSON valide
+        text = text.trim().replace(/^```json|```$/g, '').trim();
 
-    if (!productName || !price) {
-        console.warn('[Cheerio] Avertissement: Le nom ou le prix du produit n\'a pas été trouvé. La page n\'est peut-être pas une page produit.');
-        return null; // Retourne null si les données essentielles ne sont pas trouvées
+        const data = JSON.parse(text);
+        
+        if (data.error) {
+            throw new Error(`L'IA a déterminé que ce n'est pas une page produit valide : ${data.error}`);
+        }
+        
+        // S'assurer que les champs essentiels sont là
+        if (!data.productName || !data.price) {
+            throw new Error("L'IA n'a pas pu extraire le nom ou le prix du produit.");
+        }
+
+        return data;
+
+    } catch (error) {
+        console.error("[AI Extractor] Erreur lors de l'extraction par IA:", error);
+        throw new Error(`L'extraction des données par l'IA a échoué : ${error.message}`);
     }
-
-    return {
-        productName,
-        price,
-        currency,
-        descriptionComplete,
-        imageUrl,
-        productUrl: url,
-    };
 }
 
 
@@ -67,24 +86,18 @@ async function fetchAndParse(url) {
         const page = await context.newPage();
 
         console.log(`[Scraper] Navigation vers: ${url}`);
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
-        
-        // Attendre que le sélecteur de nom de produit soit visible, signe que la page est chargée côté client
-        await page.waitForSelector(JUMIA_SELECTORS.name, { timeout: 15000 });
+        // Augmentation du timeout pour les sites lents
+        await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 });
 
-        const content = await page.content();
+        const bodyHtml = await page.evaluate(() => document.body.innerHTML);
         
-        if (!content) {
+        if (!bodyHtml) {
             console.warn('[Scraper] AVERTISSEMENT: Le contenu de la page est vide après chargement.');
             return { error: 'Le contenu de la page récupérée est vide.' };
         }
 
-        console.log('[Scraper] ✅ Contenu HTML brut extrait. Parsing avec Cheerio...');
-        const productData = extractJumiaProductData(content, url);
-
-        if (!productData) {
-            return { error: 'Impossible d\'extraire les données du produit. Vérifiez que l\'URL pointe vers une page produit valide.' };
-        }
+        console.log('[Scraper] ✅ Contenu HTML brut extrait. Parsing avec l\'IA...');
+        const productData = await extractProductDataWithAI(bodyHtml, url);
 
         return { data: productData };
 
@@ -106,11 +119,6 @@ app.post('/scrape', async (req, res) => {
     if (!url) {
         console.error('[API] Requête reçue sans URL.');
         return res.status(400).json({ success: false, message: 'URL est requise.' });
-    }
-
-    // Pour l'instant, on ne gère que Jumia. On pourrait ajouter d'autres sites ici.
-    if (!url.includes('jumia.ci')) {
-        return res.status(400).json({ success: false, message: 'Pour le moment, seul le scraping de jumia.ci est supporté.' });
     }
 
     try {
