@@ -4,16 +4,12 @@ set -o errexit
 
 echo "Starting build script for scraper service..."
 
-# Installe les dépendances système nécessaires pour Playwright AVANT npm install
-# C'est la meilleure tentative pour préparer l'environnement
-echo "Installing Playwright system dependencies..."
-npx playwright install-deps
-
 # Installe les dépendances npm
 echo "Installing npm dependencies..."
 npm install
 
-# Installe le navigateur Chromium (devrait être géré par npm install, mais on s'assure qu'il est là)
+# Installe le navigateur Chromium pour Playwright.
+# --with-deps est supprimé car il nécessite des permissions sudo qui ne sont pas disponibles.
 echo "Installing Playwright browser..."
 npx playwright install chromium
 
