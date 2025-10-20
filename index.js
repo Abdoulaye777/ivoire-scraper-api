@@ -10,7 +10,7 @@ app.use(cors());
 app.use(express.json());
 
 async function fetchHtmlContent(url) {
-    let browser;
+    let browser = null;
     console.log('[Scraper] Lancement du navigateur pour l\'URL :', url);
     try {
         browser = await chromium.launch({
@@ -32,14 +32,15 @@ async function fetchHtmlContent(url) {
         const page = await context.newPage();
 
         console.log(`[Scraper] Navigation vers: ${url}`);
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90000 });
+        // Augmentation du timeout global pour la navigation
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 120000 });
 
         // Attendre un sélecteur de base pour s'assurer que la page est chargée
-        await page.waitForSelector('body', { timeout: 15000 });
+        await page.waitForSelector('body', { timeout: 30000 });
         
         const bodyHtml = await page.content();
         
-        if (!bodyHtml || bodyHtml.length < 500) { // Vérifier si le HTML n'est pas trop petit
+        if (!bodyHtml || bodyHtml.length < 500) {
             console.warn('[Scraper] AVERTISSEMENT: Le contenu de la page est vide ou trop petit.');
             throw new Error('Le contenu de la page récupérée est vide ou insuffisant.');
         }
@@ -49,7 +50,8 @@ async function fetchHtmlContent(url) {
 
     } catch (error) {
         console.error(`[Scraper] ERREUR lors de la récupération de ${url}:`, error.message);
-        throw new Error(`La récupération du contenu a échoué: ${error.message}`);
+        // Renvoyer l'erreur pour qu'elle soit gérée par l'endpoint
+        throw error;
     } finally {
         if (browser) {
             await browser.close();
@@ -60,6 +62,7 @@ async function fetchHtmlContent(url) {
 
 app.post('/scrape', async (req, res) => {
     const { url } = req.body;
+    // S'assurer que le header est bien en JSON pour toutes les réponses
     res.setHeader('Content-Type', 'application/json');
 
     if (!url) {
@@ -72,13 +75,16 @@ app.post('/scrape', async (req, res) => {
         const htmlContent = await fetchHtmlContent(url);
         
         console.log('[API] ✅ Récupération HTML réussie, envoi de la réponse JSON.');
+        // Le succès ne doit être envoyé qu'ici
         return res.status(200).json({ success: true, html: htmlContent });
 
     } catch (error) {
-        console.error(`[API] Erreur critique du serveur pour l'URL ${url}:`, error);
+        console.error(`[API] Erreur critique du serveur pour l'URL ${url}:`, error.message);
+        // Intercepter TOUTES les erreurs et renvoyer une réponse JSON formatée
+        const errorMessage = error instanceof Error ? error.message : 'Une erreur serveur inconnue est survenue.';
         return res.status(500).json({ 
             success: false, 
-            message: error instanceof Error ? `Erreur du serveur de scraping : ${error.message}` : 'Une erreur serveur inconnue est survenue.'
+            message: `Erreur du service de scraping : ${errorMessage}`
         });
     }
 });
