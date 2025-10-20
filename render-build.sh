@@ -8,10 +8,11 @@ echo "Starting build script for scraper service..."
 echo "Installing npm dependencies..."
 npm install
 
-# Install Playwright browsers and all system dependencies.
-# The --with-deps flag ensures all necessary libraries are installed,
-# which is crucial for CI/CD environments like Render.
-echo "Installing Playwright and its dependencies..."
-npx playwright install --with-deps chromium
+# Install only the Playwright browser.
+# We skip installing system dependencies with `install-deps` as it requires sudo,
+# which is not available in the Render build environment.
+# The standard Render environment should have most of the necessary system libraries.
+echo "Installing Playwright browser..."
+npx playwright install chromium
 
 echo "Build script finished successfully."
