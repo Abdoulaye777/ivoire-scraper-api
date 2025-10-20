@@ -32,7 +32,7 @@ async function fetchHtmlContent(url) {
         const page = await context.newPage();
 
         console.log(`[Scraper] Navigation vers: ${url}`);
-        // Augmentation du timeout global pour la navigation
+        // Augmentation significative du timeout global pour la navigation
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 120000 });
 
         // Attendre un sélecteur de base pour s'assurer que la page est chargée

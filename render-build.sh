@@ -4,14 +4,16 @@ set -o errexit
 
 echo "Starting build script for scraper service..."
 
-# Install npm dependencies
+# Installe les dépendances système nécessaires pour Playwright AVANT npm install
+# C'est la meilleure tentative pour préparer l'environnement
+echo "Installing Playwright system dependencies..."
+npx playwright install-deps
+
+# Installe les dépendances npm
 echo "Installing npm dependencies..."
 npm install
 
-# Install only the Playwright browser.
-# We skip installing system dependencies with `install-deps` as it requires sudo,
-# which is not available in the Render build environment.
-# The standard Render environment should have most of the necessary system libraries.
+# Installe le navigateur Chromium (devrait être géré par npm install, mais on s'assure qu'il est là)
 echo "Installing Playwright browser..."
 npx playwright install chromium
 
